@@ -2,25 +2,22 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
-
+	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"net/http"
-
-	"bytes"
-
-	"github.com/pkg/errors"
+	log "github.com/Sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/client-go/pkg/api/v1"
 )
@@ -82,7 +79,7 @@ func FindKubectl() (string, error) {
 }
 
 func RunKapp(files []string) ([]byte, error) {
-	args := []string{"convert"}
+	args := []string{"generate"}
 	for _, file := range files {
 		args = append(args, "-f")
 		args = append(args, os.ExpandEnv(file))
@@ -104,46 +101,25 @@ func RunKapp(files []string) ([]byte, error) {
 
 func RunKubeCreate(input []byte, namespace string) error {
 	// now deploy using cmdline kubectl
-	args := []string{"-n", namespace, "create", "-f", "-"}
-
-	kubectl := exec.Command(KubectlLoc, args...)
+	kubectl := exec.Command(KubectlLoc, "-n", namespace, "create", "-f", "-")
 	// creating pipes needed
 	kIn, err := kubectl.StdinPipe()
 	if err != nil {
 		return errors.Wrap(err, "cannot create the stdin pipe to kubectl")
 	}
-	kOut, err := kubectl.StdoutPipe()
-	if err != nil {
-		return errors.Wrap(err, "cannot create the stdout pipe to kubectl")
-	}
-	kErr, err := kubectl.StderrPipe()
-	if err != nil {
-		return errors.Wrap(err, "cannot create the stderr pipe to kubectl")
-	}
+	go func() {
+		defer kIn.Close()
+		kIn.Write(input)
+		//if _, err := kIn.Write(input); err != nil {
+		//	return errors.Wrap(err, "cannot write to the stdin of kubectl command")
+		//}
+	}()
 
-	// start process
-	if err := kubectl.Start(); err != nil {
-		return errors.Wrap(err, "cannot start running kubectl command")
-	}
-	if _, err := kIn.Write(input); err != nil {
-		return errors.Wrap(err, "cannot write to the stdin of kubectl command")
-	}
-	if err := kIn.Close(); err != nil {
-		return errors.Wrap(err, "cannot close the kubectl stdin")
-	}
-	kOutput, err := ioutil.ReadAll(kOut)
+	output, err := kubectl.CombinedOutput()
 	if err != nil {
-		return errors.Wrap(err, "error reading from the kubectl output")
+		return errors.Wrapf(err, "failed to execute, got: %s", string(output))
 	}
-	kError, err := ioutil.ReadAll(kErr)
-	if err != nil {
-		return errors.Wrap(err, "error reading from the kubectl error")
-	}
-
-	if err := kubectl.Wait(); err != nil {
-		return errors.Wrapf(err, "failed while waiting on kubectl to complete, got: %s", string(kError))
-	}
-	log.Infof("deployed in namespace: %q\n%s", namespace, string(kOutput))
+	log.Infof("deployed in namespace: %q\n%s", namespace, string(output))
 	return nil
 }
 
@@ -324,50 +300,55 @@ func RunTests(clientset *kubernetes.Clientset) error {
 			},
 		},
 	}
-
+	var wg sync.WaitGroup
+	wg.Add(len(tests))
 	for _, test := range tests {
-		log.Infoln("Running:", test.TestName)
+		go func(test testData) {
+			defer wg.Done()
+			log.Infoln("Running:", test.TestName)
 
-		// create a namespace
-		_, err := createNS(clientset, test.Namespace)
-		if err != nil {
-			return errors.Wrapf(err, "error creating namespace")
-		}
-		log.Debugf("namespace %q created", test.Namespace)
+			// create a namespace
+			_, err := createNS(clientset, test.Namespace)
+			if err != nil {
+				log.Fatalf("error creating namespace: ", err)
+			}
+			log.Debugf("namespace %q created", test.Namespace)
 
-		// run kapp
-		convertedOutput, err := RunKapp(test.InputFiles)
-		if err != nil {
-			return errors.Wrapf(err, "error running kapp")
-		}
-		//log.Debugln(string(convertedOutput))
+			// run kapp
+			convertedOutput, err := RunKapp(test.InputFiles)
+			if err != nil {
+				log.Fatalf("error running kapp: ", err)
+			}
+			//log.Debugln(string(convertedOutput))
 
-		// run kubectl create
-		if err := RunKubeCreate(convertedOutput, test.Namespace); err != nil {
-			return errors.Wrapf(err, "error running kubectl create")
-		}
+			// run kubectl create
+			if err := RunKubeCreate(convertedOutput, test.Namespace); err != nil {
+				log.Fatalf("error running kubectl create: ", err)
+			}
 
-		// see if the pods are running
-		if err := PodsStarted(clientset, test.Namespace, test.PodStarted); err != nil {
-			return errors.Wrapf(err, "error finding running pods")
-		}
+			// see if the pods are running
+			if err := PodsStarted(clientset, test.Namespace, test.PodStarted); err != nil {
+				log.Fatalf("error finding running pods: ", err)
+			}
 
-		// get endpoints for all services
-		endPoints, err := getEndPoints(clientset, test.Namespace, test.NodePortServices)
-		if err != nil {
-			return errors.Wrapf(err, "error getting nodes")
-		}
+			// get endpoints for all services
+			endPoints, err := getEndPoints(clientset, test.Namespace, test.NodePortServices)
+			if err != nil {
+				log.Fatalf("error getting nodes: ", err)
+			}
 
-		if err := pingEndPoints(endPoints); err != nil {
-			return errors.Wrapf(err, "error pinging endpoint")
-		}
-		log.Infoln("Successfully pinged all endpoints!")
+			if err := pingEndPoints(endPoints); err != nil {
+				log.Fatalf("error pinging endpoint: ", err)
+			}
+			log.Infoln("Successfully pinged all endpoints!")
 
-		if err := clientset.CoreV1().Namespaces().Delete(test.Namespace, &metav1.DeleteOptions{}); err != nil {
-			return errors.Wrapf(err, "error deleting namespace")
-		}
-		log.Infof("Successfully deleted namespace: %q", test.Namespace)
+			if err := clientset.CoreV1().Namespaces().Delete(test.Namespace, &metav1.DeleteOptions{}); err != nil {
+				log.Fatalf("error deleting namespace: ", err)
+			}
+			log.Infof("Successfully deleted namespace: %q", test.Namespace)
+		}(test)
 	}
+	wg.Wait()
 	return nil
 }
 
