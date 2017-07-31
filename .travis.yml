@@ -1,3 +1,8 @@
+sudo: required
+
+services:
+  - docker
+
 dist: trusty
 
 language: go
@@ -22,6 +27,8 @@ install:
 
 script:
   - make travis-tests
+  - ./scripts/setup-k8s-cluster.sh
+  - make test
 
 before_deploy:
   - make cross
