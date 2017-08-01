@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-var KappLoc string
+var KedgeLoc string
 var KubectlLoc string
 var ProjectPath = "$GOPATH/src/github.com/kedgeproject/kedge/"
 
@@ -58,13 +58,13 @@ func createNS(clientset *kubernetes.Clientset, name string) (*v1.Namespace, erro
 	return clientset.CoreV1().Namespaces().Create(ns)
 }
 
-func FindKapp(t *testing.T) (string, error) {
-	kapp, err := exec.LookPath("kedge")
+func FindKedge(t *testing.T) (string, error) {
+	kedge, err := exec.LookPath("kedge")
 	if err != nil {
-		return "", errors.Wrap(err, "cannot find kapp")
+		return "", errors.Wrap(err, "cannot find kedge")
 	}
-	t.Logf("kapp location: %s", kapp)
-	return kapp, nil
+	t.Logf("kedge location: %s", kedge)
+	return kedge, nil
 }
 
 func FindKubectl(t *testing.T) (string, error) {
@@ -76,13 +76,13 @@ func FindKubectl(t *testing.T) (string, error) {
 	return kubectl, nil
 }
 
-func RunKapp(files []string) ([]byte, error) {
+func RunKedge(files []string) ([]byte, error) {
 	args := []string{"generate"}
 	for _, file := range files {
 		args = append(args, "-f")
 		args = append(args, os.ExpandEnv(file))
 	}
-	cmd := exec.Command(KappLoc, args...)
+	cmd := exec.Command(KedgeLoc, args...)
 
 	var out, stdErr bytes.Buffer
 	cmd.Stdout = &out
@@ -91,7 +91,7 @@ func RunKapp(files []string) ([]byte, error) {
 	err := cmd.Run()
 	if err != nil {
 		return nil, fmt.Errorf("error running %q\n%s %s",
-			fmt.Sprintf("kapp %s", strings.Join(args, " ")),
+			fmt.Sprintf("kedge %s", strings.Join(args, " ")),
 			stdErr.String(), err)
 	}
 	return out.Bytes(), nil
@@ -246,7 +246,7 @@ func Test_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error getting kube client: %v", err)
 	}
-	KappLoc, err = FindKapp(t)
+	KedgeLoc, err = FindKedge(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,10 +365,10 @@ func Test_Integration(t *testing.T) {
 			t.Logf("namespace %q created", test.Namespace)
 			defer deleteNamespace(t, clientset, test.Namespace)
 
-			// run kapp
-			convertedOutput, err := RunKapp(test.InputFiles)
+			// run kedge
+			convertedOutput, err := RunKedge(test.InputFiles)
 			if err != nil {
-				t.Fatalf("error running kapp: %v", err)
+				t.Fatalf("error running kedge: %v", err)
 			}
 			//t.Log(string(convertedOutput))
 
