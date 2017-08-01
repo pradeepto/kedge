@@ -20,7 +20,6 @@ import (
 )
 
 var KedgeLoc string
-var KubectlLoc string
 var ProjectPath = "$GOPATH/src/github.com/kedgeproject/kedge/"
 
 func homeDir() string {
@@ -67,17 +66,8 @@ func FindKedge(t *testing.T) (string, error) {
 	return kedge, nil
 }
 
-func FindKubectl(t *testing.T) (string, error) {
-	kubectl, err := exec.LookPath("kubectl")
-	if err != nil {
-		return "", errors.Wrap(err, "cannot find kubectl")
-	}
-	t.Logf("kubectl location: %s", kubectl)
-	return kubectl, nil
-}
-
-func RunKedge(files []string) ([]byte, error) {
-	args := []string{"generate"}
+func RunKedge(files []string, namespace string) ([]byte, error) {
+	args := []string{"create", "-n", namespace}
 	for _, file := range files {
 		args = append(args, "-f")
 		args = append(args, os.ExpandEnv(file))
@@ -95,30 +85,6 @@ func RunKedge(files []string) ([]byte, error) {
 			stdErr.String(), err)
 	}
 	return out.Bytes(), nil
-}
-
-func RunKubeCreate(t *testing.T, input []byte, namespace string) error {
-	// now deploy using cmdline kubectl
-	kubectl := exec.Command(KubectlLoc, "-n", namespace, "create", "-f", "-")
-	// creating pipes needed
-	kIn, err := kubectl.StdinPipe()
-	if err != nil {
-		return errors.Wrap(err, "cannot create the stdin pipe to kubectl")
-	}
-	go func() {
-		defer kIn.Close()
-		kIn.Write(input)
-		//if _, err := kIn.Write(input); err != nil {
-		//	return errors.Wrap(err, "cannot write to the stdin of kubectl command")
-		//}
-	}()
-
-	output, err := kubectl.CombinedOutput()
-	if err != nil {
-		return errors.Wrapf(err, "failed to execute, got: %s", string(output))
-	}
-	t.Logf("deployed in namespace: %q\n%s", namespace, string(output))
-	return nil
 }
 
 func mapkeys(m map[string]int) []string {
@@ -250,24 +216,8 @@ func Test_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	KubectlLoc, err = FindKubectl(t)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	tests := []testData{
-		{
-			TestName:  "Normal Wordpress test",
-			Namespace: "wordpress",
-			InputFiles: []string{
-				ProjectPath + "examples/wordpress/db.yaml",
-				ProjectPath + "examples/wordpress/web.yaml",
-			},
-			PodStarted: []string{"web"},
-			NodePortServices: []ServicePort{
-				{Name: "wordpress", Port: 8080},
-			},
-		},
 		{
 			TestName:  "Testing configMap",
 			Namespace: "configmap",
@@ -290,6 +240,29 @@ func Test_Integration(t *testing.T) {
 			PodStarted: []string{"web"},
 			NodePortServices: []ServicePort{
 				{Name: "wordpress", Port: 8080},
+			},
+		},
+		{
+			TestName:  "Testing envFrom",
+			Namespace: "envfrom",
+			InputFiles: []string{
+				ProjectPath + "examples/envFrom/db.yaml",
+				ProjectPath + "examples/envFrom/web.yaml",
+			},
+			PodStarted: []string{"web"},
+			NodePortServices: []ServicePort{
+				{Name: "wordpress", Port: 8080},
+			},
+		},
+		{
+			TestName:  "Testing extraResources",
+			Namespace: "extraresources",
+			InputFiles: []string{
+				ProjectPath + "examples/extraResources/app.yaml",
+			},
+			PodStarted: []string{"web"},
+			NodePortServices: []ServicePort{
+				{Name: "web", Port: 80},
 			},
 		},
 		{
@@ -317,6 +290,18 @@ func Test_Integration(t *testing.T) {
 			},
 		},
 		{
+			TestName:  "Testing secret",
+			Namespace: "secrets",
+			InputFiles: []string{
+				ProjectPath + "examples/secrets/db.yaml",
+				ProjectPath + "examples/secrets/web.yaml",
+			},
+			PodStarted: []string{"web"},
+			NodePortServices: []ServicePort{
+				{Name: "wordpress", Port: 8080},
+			},
+		},
+		{
 			TestName:  "Testing single file",
 			Namespace: "singlefile",
 			InputFiles: []string{
@@ -328,23 +313,11 @@ func Test_Integration(t *testing.T) {
 			},
 		},
 		{
-			TestName:  "Testing envFrom",
-			Namespace: "envfrom",
+			TestName:  "Normal Wordpress test",
+			Namespace: "wordpress",
 			InputFiles: []string{
-				ProjectPath + "examples/envFrom/db.yaml",
-				ProjectPath + "examples/envFrom/web.yaml",
-			},
-			PodStarted: []string{"web"},
-			NodePortServices: []ServicePort{
-				{Name: "wordpress", Port: 8080},
-			},
-		},
-		{
-			TestName:  "Testing secret",
-			Namespace: "secret",
-			InputFiles: []string{
-				ProjectPath + "examples/secrets/db.yaml",
-				ProjectPath + "examples/secrets/web.yaml",
+				ProjectPath + "examples/wordpress/db.yaml",
+				ProjectPath + "examples/wordpress/web.yaml",
 			},
 			PodStarted: []string{"web"},
 			NodePortServices: []ServicePort{
@@ -366,16 +339,11 @@ func Test_Integration(t *testing.T) {
 			defer deleteNamespace(t, clientset, test.Namespace)
 
 			// run kedge
-			convertedOutput, err := RunKedge(test.InputFiles)
+			convertedOutput, err := RunKedge(test.InputFiles, test.Namespace)
 			if err != nil {
 				t.Fatalf("error running kedge: %v", err)
 			}
-			//t.Log(string(convertedOutput))
-
-			// run kubectl create
-			if err := RunKubeCreate(t, convertedOutput, test.Namespace); err != nil {
-				t.Fatalf("error running kubectl create: %v", err)
-			}
+			t.Log(string(convertedOutput))
 
 			// see if the pods are running
 			if err := PodsStarted(t, clientset, test.Namespace, test.PodStarted); err != nil {
