@@ -339,6 +339,18 @@ func Test_Integration(t *testing.T) {
 				{Name: "wordpress", Port: 8080},
 			},
 		},
+		{
+			TestName:  "Testing secret",
+			Namespace: "secret",
+			InputFiles: []string{
+				ProjectPath + "examples/secrets/db.yaml",
+				ProjectPath + "examples/secrets/web.yaml",
+			},
+			PodStarted: []string{"web"},
+			NodePortServices: []ServicePort{
+				{Name: "wordpress", Port: 8080},
+			},
+		},
 	}
 
 	for _, test := range tests {
