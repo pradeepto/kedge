@@ -26,7 +26,8 @@ install:
   - true
 
 script:
-  - make travis-tests
+  - make bin
+  - sudo mv kedge /usr/local/bin/kedge
   - ./scripts/setup-k8s-cluster.sh
   - make test
 
