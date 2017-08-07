@@ -29,7 +29,8 @@ script:
   - make bin
   - sudo mv kedge /usr/local/bin/kedge
   - ./scripts/setup-k8s-cluster.sh
-  - make test
+  - make test &
+  - kubectl get pods -w --all-namespaces
 
 before_deploy:
   - make cross

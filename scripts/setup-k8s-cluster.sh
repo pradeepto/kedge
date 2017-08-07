@@ -24,21 +24,21 @@ fi
 
 IMAGE=calpicow/localkube-image:v1.5.3
 sudo docker run -d \
-    --volume=/:/rootfs:ro \
-    --volume=/sys:/sys:rw \
-    --volume=/var/lib/docker:/var/lib/docker:rw \
-    --volume=/var/lib/kubelet:/var/lib/kubelet:rw \
-    --volume=/var/run:/var/run:rw \
-    --net=host \
-    --pid=host \
-    --privileged \
-    --name=minikube \
-    $IMAGE \
-    /localkube start \
-    --apiserver-insecure-address=0.0.0.0 \
-    --apiserver-insecure-port=8080 \
-    --logtostderr=true \
-    --containerized
+      --volume=/:/rootfs:ro \
+      --volume=/sys:/sys:rw \
+      --volume=/var/lib/docker:/var/lib/docker:rw \
+      --volume=/var/lib/kubelet:/var/lib/kubelet:rw \
+      --volume=/var/run:/var/run:rw \
+      --net=host \
+      --pid=host \
+      --privileged \
+      --name=minikube \
+      $IMAGE \
+      /localkube start \
+      --apiserver-insecure-address=0.0.0.0 \
+      --apiserver-insecure-port=8080 \
+      --logtostderr=true \
+      --containerized
 
 until curl 127.0.0.1:8080 &>/dev/null;
 do
@@ -51,7 +51,12 @@ kubectl config set-cluster dev --server=http://localhost:8080
 kubectl config set-context dev --cluster=dev --user=default
 kubectl config use-context dev
 kubectl config set-credentials default --token=foobar
+
 kubectl get nodes
+kubectl get pods --all-namespaces
+
+kubectl run web --image centos/httpd
+#kubectl get pods -w --all-namespaces
 
 # Debug info:
 # cat ~/.kube/config
