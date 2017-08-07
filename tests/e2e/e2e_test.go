@@ -230,18 +230,18 @@ func Test_Integration(t *testing.T) {
 				{Name: "wordpress", Port: 8080},
 			},
 		},
-		{
-			TestName:  "Testing customVol",
-			Namespace: "customvol",
-			InputFiles: []string{
-				ProjectPath + "examples/customVol/db.yaml",
-				ProjectPath + "examples/customVol/web.yaml",
-			},
-			PodStarted: []string{"web"},
-			NodePortServices: []ServicePort{
-				{Name: "wordpress", Port: 8080},
-			},
-		},
+		//{
+		//	TestName:  "Testing customVol",
+		//	Namespace: "customvol",
+		//	InputFiles: []string{
+		//		ProjectPath + "examples/customVol/db.yaml",
+		//		ProjectPath + "examples/customVol/web.yaml",
+		//	},
+		//	PodStarted: []string{"web"},
+		//	NodePortServices: []ServicePort{
+		//		{Name: "wordpress", Port: 8080},
+		//	},
+		//},
 		{
 			TestName:  "Testing envFrom",
 			Namespace: "envfrom",
