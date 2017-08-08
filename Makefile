@@ -3,6 +3,7 @@
 GITCOMMIT := $(shell git rev-parse --short HEAD)
 BUILD_FLAGS := -ldflags="-w -X github.com/kedgeproject/kedge/cmd.GITCOMMIT=$(GITCOMMIT)"
 PKGS = $(shell glide novendor)
+UNITPKGS = $(shell glide novendor | grep -v tests)
 
 default: bin
 
@@ -52,7 +53,11 @@ check-vendor:
 
 .PHONY: test-unit
 test-unit:
-	go test $(PKGS)
+	go test $(UNITPKGS)
+
+.PHONY: test-e2e
+test-e2e:
+	go test github.com/kedgeproject/kedge/tests/e2e
 
 # Run all tests
 .PHONY: test
@@ -78,6 +83,6 @@ test-unit-cover:
 	go test -i -race -cover $(PKGS)
 	# go test doesn't support colleting coverage across multiple packages,
 	# generate go test commands using go list and run go test for every package separately
-	go list -f '"go test -race -cover -v -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"' github.com/kedgeproject/kedge/...  | grep -v "vendor" | xargs -L 1 -P4 sh -c
+	go list -f '"go test -race -cover -v -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"' github.com/kedgeproject/kedge/...  | grep -v "vendor" | grep -v "e2e" | xargs -L 1 -P4 sh -c
 
 
